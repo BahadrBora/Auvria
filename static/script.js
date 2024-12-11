@@ -1,45 +1,140 @@
-// File: script.js
 document.addEventListener("DOMContentLoaded", () => {
-    const svg = document.querySelector("svg"); // Select the SVG element
-    let isPanning = false; // Track panning state
-    let startPoint = { x: 0, y: 0 }; // Initial pointer position
-    let currentTranslate = { x: 0, y: 0 }; // Current translation
+    const map = document.querySelector("img"); // The map image
+    const labelsContainer = document.querySelector(".map-labels"); // The labels container
+    const addLabelButton = document.getElementById("add-label-button"); // Add Label button
 
-    // Mouse down to start dragging
-    svg.addEventListener("mousedown", (e) => {
-        isPanning = true;
-        startPoint = { x: e.clientX, y: e.clientY };
+    let isDragging = false; // Whether the user is dragging the map
+    let isAddingLabel = false; // Whether label creation mode is active
+    let startX, startY; // Starting coordinates for dragging
+    let currentX = 0, currentY = 0; // Current translation values
+    let scale = 1; // Current zoom scale
+    const maxScale = 5; // Maximum zoom level
+    let minScale = 1; // Minimum zoom level, dynamically calculated
+
+    // Calculate the minimum zoom scale to fit the map entirely in the container
+    const calculateMinScale = () => {
+        const containerRect = labelsContainer.getBoundingClientRect();
+        return Math.min(
+            containerRect.width / map.naturalWidth,
+            containerRect.height / map.naturalHeight
+        );
+    };
+
+    // Initialize the minimum scale
+    minScale = calculateMinScale();
+
+    // Prevent default drag behavior for the map image
+    map.addEventListener("dragstart", (e) => {
+        e.preventDefault();
     });
 
-    // Mouse move to drag the map
-    svg.addEventListener("mousemove", (e) => {
-        if (!isPanning) return;
-        const dx = e.clientX - startPoint.x; // Calculate movement
-        const dy = e.clientY - startPoint.y;
-        currentTranslate.x += dx; // Update translation
-        currentTranslate.y += dy;
-        svg.style.transform = `translate(${currentTranslate.x}px, ${currentTranslate.y}px)`;
-        startPoint = { x: e.clientX, y: e.clientY }; // Update start point
+    // Handle map dragging
+    labelsContainer.addEventListener("mousedown", (e) => {
+        if (isAddingLabel) return; // Disable dragging in Add Label mode
+        isDragging = true;
+        startX = e.clientX - currentX;
+        startY = e.clientY - currentY;
+        labelsContainer.style.cursor = "grabbing";
     });
 
-    // Mouse up to stop dragging
-    svg.addEventListener("mouseup", () => {
-        isPanning = false;
+    labelsContainer.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+
+        currentX = e.clientX - startX;
+        currentY = e.clientY - startY;
+
+        updateTransform();
     });
 
-    // Mouse out to stop dragging
-    svg.addEventListener("mouseleave", () => {
-        isPanning = false;
+    labelsContainer.addEventListener("mouseup", () => {
+        isDragging = false;
+        labelsContainer.style.cursor = "grab";
     });
-    
-    // Add zooming functionality
-svg.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const scaleAmount = 0.1; // Zoom increment
-    const currentScale = parseFloat(svg.getAttribute("data-scale") || 1);
-    const newScale = e.deltaY < 0 ? currentScale + scaleAmount : currentScale - scaleAmount;
-    svg.setAttribute("data-scale", newScale);
-    svg.style.transform = `translate(${currentTranslate.x}px, ${currentTranslate.y}px) scale(${newScale})`;
-});
 
+    labelsContainer.addEventListener("mouseleave", () => {
+        isDragging = false;
+        labelsContainer.style.cursor = "grab";
+    });
+
+    // Zoom the map with the mouse wheel
+    labelsContainer.addEventListener("wheel", (e) => {
+        e.preventDefault();
+
+        const zoomFactor = 0.1;
+        const zoomDirection = e.deltaY > 0 ? -1 : 1; // Determine zoom direction
+
+        const newScale = Math.max(minScale, Math.min(maxScale, scale + zoomDirection * zoomFactor));
+        if (newScale === scale) return;
+
+        const rect = labelsContainer.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const cursorY = e.clientY - rect.top;
+
+        currentX -= (cursorX - rect.width / 2) * (newScale / scale - 1);
+        currentY -= (cursorY - rect.height / 2) * (newScale / scale - 1);
+
+        scale = newScale;
+
+        updateTransform();
+    });
+
+    // Update the map's position and zoom
+    const updateTransform = () => {
+        map.style.transform = `translate(${currentX}px, ${currentY}px) scale(${scale})`;
+        labelsContainer.style.transform = `translate(${currentX}px, ${currentY}px) scale(${scale})`;
+    };
+
+    // Handle the Add Label button
+    addLabelButton.addEventListener("click", () => {
+        isAddingLabel = !isAddingLabel; // Toggle the label creation mode
+        addLabelButton.classList.toggle("active", isAddingLabel); // Update button style
+    });
+
+    // Add a label at the clicked position on the map
+    labelsContainer.addEventListener("click", (e) => {
+        if (!isAddingLabel) return; // Only allow label creation in Add Label mode
+
+        const rect = labelsContainer.getBoundingClientRect();
+        const x = (e.clientX - rect.left); // Get x relative to the container
+        const y = (e.clientY - rect.top); // Get y relative to the container
+
+        const labelName = prompt("Enter label name:", "New Label");
+        if (!labelName) return; // Exit if no name is provided
+
+        const label = document.createElement("div");
+        label.className = "map-label";
+        label.style.left = `${x}px`;
+        label.style.top = `${y}px`;
+        label.textContent = labelName;
+        labelsContainer.appendChild(label);
+
+        // Exit Add Label mode after placing a label
+        isAddingLabel = false;
+        addLabelButton.classList.remove("active");
+    });
+
+    // Recalculate minimum scale and adjust when the window resizes
+    window.addEventListener("resize", () => {
+        minScale = calculateMinScale();
+        if (scale < minScale) {
+            scale = minScale;
+            currentX = 0;
+            currentY = 0;
+        }
+        updateTransform();
+    });
+
+    // Initialize the map's position
+    const initializeMap = () => {
+        scale = minScale;
+        currentX = 0;
+        currentY = 0;
+        updateTransform();
+    };
+
+    if (map.complete) {
+        initializeMap();
+    } else {
+        map.addEventListener("load", initializeMap);
+    }
 });
